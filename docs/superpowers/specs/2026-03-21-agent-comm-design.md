@@ -24,15 +24,15 @@ Every piece of data is a **Message**. A message has:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `id` | `string` | Unique identifier (nanoid, e.g. `msg_a1b2c3`) |
+| `id` | `string` | Unique identifier (`msg_` prefix + 16-char nanoid, e.g. `msg_V1StGXR8_Z5jdHi6`) |
 | `type` | `string` | Message type: `plan`, `spec`, `task`, `note`, `command`, or custom |
 | `status` | `string` | Current state: `draft`, `open`, `in_progress`, `completed`, `cancelled` |
 | `title` | `string` | Short summary |
 | `body` | `string` | Markdown content |
-| `author` | `string` | Agent name or `human` |
+| `author` | `string` | Agent name or `human`. See Author Resolution section for default behavior |
 | `channel` | `string \| null` | Optional topic/channel (e.g. `frontend`, `review`) |
 | `parent_id` | `string \| null` | Reference to parent message (e.g. task → plan) |
-| `refs` | `string[]` | IDs of related messages |
+| `refs` | `string[]` | IDs of related messages. On create: `--refs id1,id2`. On update: `--add-ref id` / `--remove-ref id` |
 | `metadata` | `JSON` | Flexible key-value for type-specific data |
 | `created_at` | `ISO timestamp` | Creation time |
 | `updated_at` | `ISO timestamp` | Last modification time |
@@ -51,10 +51,25 @@ State transitions are validated per type and defined in `.agent-comm/config.json
 
 - **task:** `draft → open → in_progress → completed | cancelled`
 - **plan/spec:** `draft → open → in_progress → completed | cancelled`
-- **note:** `open | cancelled`
-- **command:** `open → in_progress → completed | cancelled`
+- **note:** Created directly as `open`. Valid states: `open | cancelled`
+- **command:** Created directly as `open`. Valid states: `open → in_progress → completed | cancelled`
 
-Custom types default to allowing all transitions unless configured otherwise.
+The default initial status for `create` is `draft`, except for `note` and `command` which start as `open`.
+
+Custom types are limited to the six canonical statuses (`draft`, `open`, `in_progress`, `completed`, `cancelled`, `archived`) but allow unrestricted transitions between them unless configured otherwise. Arbitrary status strings are not permitted.
+
+### Message Deletion
+
+Messages are **soft-deleted** via `ac archive <id>`, which sets status to `archived`. `ac archive` bypasses normal transition validation — any message in any non-archived state can be archived. It is a system-level operation, not a workflow transition. Archived messages are excluded from `list` and `feed` by default but can be included with `--include-archived`. No hard delete — the message board is an audit trail.
+
+### Author Resolution
+
+The `author` field is resolved with this precedence (highest first):
+
+1. `--author` CLI flag
+2. `$AC_AUTHOR` environment variable
+3. `author` field in `.agent-comm/config.json`
+4. System username (`os.userInfo().username`)
 
 ## 2. Storage Layer
 
@@ -62,11 +77,48 @@ Dual storage — SQLite as source of truth, markdown files for readability.
 
 ### SQLite (`<root>/.agent-comm/store.db`)
 
-- Single `messages` table matching the data model above.
-- `refs` and `metadata` stored as JSON columns.
-- Indexes on `type`, `status`, `channel`, `parent_id`, `author` for fast queries.
-- A `state_log` table tracking state transitions with timestamps for audit/history.
-- WAL mode enabled for concurrent read access.
+WAL mode enabled for concurrent read access. Schema version tracked via `PRAGMA user_version`.
+
+**DDL:**
+
+```sql
+-- Schema version 1
+PRAGMA user_version = 1;
+
+CREATE TABLE messages (
+  id          TEXT PRIMARY KEY,
+  type        TEXT NOT NULL,
+  status      TEXT NOT NULL DEFAULT 'draft',
+  title       TEXT NOT NULL,
+  body        TEXT NOT NULL DEFAULT '',
+  author      TEXT NOT NULL,
+  channel     TEXT,
+  parent_id   TEXT REFERENCES messages(id),
+  refs        TEXT NOT NULL DEFAULT '[]',   -- JSON array of message IDs
+  metadata    TEXT NOT NULL DEFAULT '{}',   -- JSON object
+  created_at  TEXT NOT NULL,                -- ISO 8601
+  updated_at  TEXT NOT NULL                 -- ISO 8601
+);
+
+CREATE INDEX idx_messages_type      ON messages(type);
+CREATE INDEX idx_messages_status    ON messages(status);
+CREATE INDEX idx_messages_channel   ON messages(channel);
+CREATE INDEX idx_messages_parent_id ON messages(parent_id);
+CREATE INDEX idx_messages_author    ON messages(author);
+
+CREATE TABLE state_log (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  message_id  TEXT NOT NULL REFERENCES messages(id),
+  from_status TEXT,
+  to_status   TEXT NOT NULL,
+  changed_by  TEXT NOT NULL,      -- author of the change
+  changed_at  TEXT NOT NULL       -- ISO 8601
+);
+
+CREATE INDEX idx_state_log_message_id ON state_log(message_id);
+```
+
+**Schema migrations:** On `ac init` or first command, the CLI checks `PRAGMA user_version` against the expected version. If behind, it runs migration scripts sequentially. Migrations are embedded in the binary, not external files.
 
 ### Markdown Files (`<root>/.agent-comm/messages/<type>/<id>.md`)
 
@@ -99,14 +151,56 @@ Add JWT validation middleware to the Express router...
 - **SQLite is the source of truth.** Markdown files are rendered on every write operation.
 - **Direct markdown edits** are reconciled via `ac sync`, which compares frontmatter `updated_at` vs SQLite.
 - **Conflicts** (both changed): SQLite wins, markdown backup saved as `<id>.conflict.md`.
-- **Reconstruction:** If SQLite is deleted, `ac sync --rebuild` reconstructs from markdown. If markdown is deleted, `ac sync` regenerates from SQLite.
-- **Auto-sync:** A lightweight mtime check runs before read commands.
+- **Reconstruction:** If SQLite is deleted, `ac sync --rebuild` reconstructs from markdown (invalid/partial files are skipped with warnings). If markdown is deleted, `ac sync` regenerates from SQLite.
+- **Auto-sync:** Before read commands, the CLI compares the mtime of the `messages/` directory against a `.last_sync` timestamp file. If the directory is newer, a full sync runs. This can be disabled with `--no-sync` on any read command.
+
+### Markdown Parsing
+
+Frontmatter is delimited by the first two `---` lines in the file. Everything after the second `---` delimiter is treated as the body. Body content may contain `---` without being misinterpreted as frontmatter.
 
 ### Scope Resolution
 
-- **Project scope (default):** `.agent-comm/` in the project root.
+- **Project scope (default):** The CLI walks up from the current working directory looking for a `.agent-comm/` directory (similar to how git finds `.git/`). If none is found, commands fail with an error suggesting `ac init`.
 - **Machine scope:** `~/.agent-comm/` in the user's home directory.
-- CLI flag `--global` to target machine scope.
+- CLI flag `--global` to target machine scope, bypassing project scope resolution.
+
+### `ac init` Artifacts
+
+Running `ac init` creates:
+
+```
+.agent-comm/
+├── store.db          # SQLite database (WAL mode)
+├── config.json       # Configuration with defaults
+├── .last_sync        # Timestamp file for auto-sync
+└── messages/         # Markdown file directory (empty)
+```
+
+Re-running `ac init` on an existing directory is idempotent: missing files are created, existing files are not overwritten, and schema migrations run if needed.
+
+### `config.json` Schema
+
+```json
+{
+  "version": 1,
+  "author": null,
+  "transitions": {
+    "task":    { "initial": "draft",  "allowed": {"draft": ["open"], "open": ["in_progress", "cancelled"], "in_progress": ["completed", "cancelled"]} },
+    "plan":    { "initial": "draft",  "allowed": {"draft": ["open"], "open": ["in_progress", "cancelled"], "in_progress": ["completed", "cancelled"]} },
+    "spec":    { "initial": "draft",  "allowed": {"draft": ["open"], "open": ["in_progress", "cancelled"], "in_progress": ["completed", "cancelled"]} },
+    "note":    { "initial": "open",   "allowed": {"open": ["cancelled"]} },
+    "command": { "initial": "open",   "allowed": {"open": ["in_progress", "cancelled"], "in_progress": ["completed", "cancelled"]} }
+  },
+  "otel": null
+}
+```
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `version` | `number` | Config schema version |
+| `author` | `string \| null` | Default author. See Author Resolution in Section 1 for full precedence |
+| `transitions` | `object` | Per-type state machine definitions. `initial` = status on create, `allowed` = valid from→to transitions |
+| `otel` | `object \| null` | OpenTelemetry config. `null` = disabled. See Section 5 |
 
 ## 3. CLI Interface
 
@@ -116,7 +210,7 @@ The tool is invoked as `ac` (short alias for `agent-comm`).
 
 ```
 # Initialize
-ac init                              # Create .agent-comm/ in current directory
+ac init                              # Create .agent-comm/ in current directory (idempotent — safe to re-run)
 ac init --global                     # Create ~/.agent-comm/
 
 # Create messages
@@ -131,10 +225,14 @@ ac feed [--channel] [--since]        # Recent messages, chronological
 # Update messages
 ac update <id> [--status] [--body] [--metadata '{}']
 
-# State transition shorthands
+# State transition shorthands (accept optional --metadata and --body)
 ac start <id>                        # → in_progress
 ac complete <id>                     # → completed
 ac cancel <id>                       # → cancelled
+ac archive <id>                      # → archived (soft delete)
+
+# History
+ac log <id>                          # Show state transition history for a message
 
 # Relationships
 ac children <id>                     # List child messages
@@ -158,13 +256,19 @@ ac --global create ...               # Create in machine scope
 - Default output is **plain text** for human readability.
 - `--json` flag on any command for machine-parseable output.
 - All write commands return the message ID to stdout for chaining.
-- Exit codes: `0` success, `1` error, `2` not found.
+- Exit codes: `0` success (including empty result sets), `1` error, `2` not found (invalid ID lookup only, e.g. `ac show nonexistent_id`).
 
 ### Pagination
 
 - `ac list` defaults to 50 results.
 - `--limit` and `--offset` for pagination.
 - `ac feed` supports `--since` for incremental reads.
+
+### Export Format
+
+- `ac export` defaults to JSON format.
+- `ac export --format json`: NDJSON (one JSON object per line, one message per line). Suitable for piping to `jq`.
+- `ac export --format md`: Tar archive of the `messages/` directory to stdout. Pipe to file: `ac export --format md > backup.tar`.
 
 ## 4. Agent Integration Patterns
 
@@ -265,7 +369,7 @@ When unconfigured, the OTEL SDK is never initialized — no overhead.
 ## 6. Error Handling
 
 - **Invalid state transitions:** Rejected with clear error message and exit code 1.
-- **Concurrent writes:** SQLite WAL mode handles serialization. Markdown writes are atomic (write to temp file, rename).
+- **Concurrent writes:** SQLite WAL mode handles serialization. Markdown writes are atomic (write to temp file, rename). Two agents updating the same message simultaneously results in **last-write-wins** semantics — no optimistic locking. This is acceptable for the single-machine use case where true simultaneous writes are rare.
 - **Markdown drift:** `ac sync` reconciles. Conflicts: SQLite wins, backup saved as `<id>.conflict.md`.
 - **Missing data:** Either storage side (SQLite or markdown) can fully reconstruct the other.
 - **No retry logic, no networking, no auth.** Single machine, file-based, trust the filesystem.
@@ -288,7 +392,11 @@ agent-comm/
 │   │   │   ├── update.ts
 │   │   │   ├── feed.ts
 │   │   │   ├── thread.ts
+│   │   │   ├── children.ts
 │   │   │   ├── channels.ts
+│   │   │   ├── log.ts
+│   │   │   ├── archive.ts
+│   │   │   ├── export.ts
 │   │   │   └── sync.ts
 │   │   └── formatters/
 │   │       ├── text.ts           # Human-readable output
