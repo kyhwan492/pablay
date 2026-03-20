@@ -223,7 +223,7 @@ ac list [--type] [--status] [--channel] [--author] [--parent]   # Filter message
 ac feed [--channel] [--since]        # Recent messages, chronological
 
 # Update messages
-ac update <id> [--status] [--body] [--metadata '{}']
+ac update <id> [--status] [--body] [--metadata '{}'] [--add-ref id] [--remove-ref id]
 
 # State transition shorthands (accept optional --metadata and --body)
 ac start <id>                        # → in_progress
