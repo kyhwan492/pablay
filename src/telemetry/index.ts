@@ -23,7 +23,7 @@ export async function initTelemetry(config: OtelConfig | null): Promise<void> {
     "@opentelemetry/exporter-metrics-otlp-http"
   );
   const { PeriodicExportingMetricReader } = await import(
-    "@opentelemetry/sdk-node"
+    "@opentelemetry/sdk-metrics"
   );
 
   const traceExporter = new OTLPTraceExporter({ url: config.endpoint });

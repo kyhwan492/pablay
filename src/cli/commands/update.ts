@@ -5,6 +5,8 @@ import { validateTransition } from "../../core/message";
 import { SyncEngine } from "../../core/sync";
 import { join } from "path";
 import type { Status } from "../../types";
+import { recordStateTransition } from "../../telemetry/metrics";
+import { logStateTransition } from "../../telemetry/logs";
 
 function performUpdate(
   program: Command,
@@ -35,6 +37,8 @@ function performUpdate(
     validateTransition(config, msg.type, msg.status, newStatus);
     store.update(id, { status: newStatus });
     store.logTransition(id, msg.status, newStatus, author);
+    recordStateTransition(msg.status, newStatus);
+    logStateTransition(id, msg.status, newStatus, author);
   }
 
   if (opts.body) {

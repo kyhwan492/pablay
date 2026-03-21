@@ -12,6 +12,8 @@ import { registerChannels } from "./commands/channels";
 import { registerLog } from "./commands/log";
 import { registerSync } from "./commands/sync";
 import { registerExport } from "./commands/export";
+import { initTelemetry, shutdownTelemetry } from "../telemetry/index";
+import { loadConfig, resolveRoot } from "../core/config";
 
 const program = new Command();
 
@@ -34,5 +36,20 @@ registerChannels(program);
 registerLog(program);
 registerSync(program);
 registerExport(program);
+
+program.hook("preAction", () => {
+  const opts = program.opts();
+  const root = resolveRoot(process.cwd(), opts.global);
+  if (root) {
+    const config = loadConfig(root);
+    initTelemetry(config.otel);
+  } else {
+    initTelemetry(null);
+  }
+});
+
+program.hook("postAction", async () => {
+  await shutdownTelemetry();
+});
 
 program.parse();
