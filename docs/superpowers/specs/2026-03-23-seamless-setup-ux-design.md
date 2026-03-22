@@ -38,7 +38,7 @@ This design resolves all three with a single install command, lazy auto-init, a 
 
 ### 1. `pablay install`
 
-A new CLI command, run once globally by the human:
+A new CLI command, run once per machine by the human. It should be run from a project directory when the human wants to inject agent instructions into that project's `CLAUDE.md`/`AGENTS.md`. Global setup (shell hook, registry, system prompt) always happens regardless of working directory.
 
 ```sh
 pablay install
@@ -46,8 +46,11 @@ pablay install
 
 **What it does:**
 
-1. **Shell hook** — Detects the active shell (`zsh`/`bash`) and appends a `chpwd` function to `~/.zshrc` and/or `~/.bashrc`. The hook runs `pablay init --silent` whenever the user enters a directory that is a git repo and does not have `.pablay/`.
+1. **Shell hook** — Detects the active shell and appends a hook to the appropriate rc file(s). The hook runs `pablay init --silent` whenever the user enters a directory that is a git repo and does not have `.pablay/`.
 
+   Detection marker: the hook block is wrapped with `# Added by pablay install` and `# End pablay install`. Idempotency check: if this marker string is found in the target rc file, injection is skipped.
+
+   **zsh** (`~/.zshrc`):
    ```sh
    # Added by pablay install
    _pablay_chpwd() {
@@ -58,32 +61,76 @@ pablay install
      fi
    }
    chpwd_functions+=(_pablay_chpwd)
+   # End pablay install
    ```
+
+   **bash** (`~/.bashrc`):
+   ```sh
+   # Added by pablay install
+   _pablay_prompt_command() {
+     if [ "$PWD" != "$_PABLAY_LAST_PWD" ]; then
+       _PABLAY_LAST_PWD="$PWD"
+       if git rev-parse --git-dir > /dev/null 2>&1; then
+         if [ ! -d ".pablay" ]; then
+           pablay init --silent
+         fi
+       fi
+     fi
+   }
+   PROMPT_COMMAND="_pablay_prompt_command${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
+   # End pablay install
+   ```
+
+   If the shell is neither zsh nor bash (e.g. fish), `pablay install` prints a manual setup snippet to stdout instead of attempting injection.
+
+   **Git worktrees and submodules:** Each worktree or submodule directory that satisfies `git rev-parse --git-dir` will get its own `.pablay/` store when the hook fires. This is intentional — each worktree is treated as an independent project with its own message board, mirroring how git treats them as separate working trees.
 
 2. **Global init** — Runs `pablay init --global` to ensure `~/.pablay/` exists.
 
 3. **Registry bootstrap** — Creates `~/.pablay/projects.json` as `[]` if it does not already exist.
 
-4. **Agent instruction injection** — If `CLAUDE.md` or `AGENTS.md` exist in the current directory, appends a Pablay usage section (see Agent Instructions below). Does not overwrite existing content.
+4. **Agent instruction injection** — If `CLAUDE.md` or `AGENTS.md` exist in the **current working directory**, appends a Pablay usage section (see Agent Instructions below). Before appending, checks whether the string `## Pablay — Task Coordination` already exists in the file; if it does, injection is skipped silently (idempotent). Does not inject into files outside the cwd. If neither file exists, skips silently (does not create them).
 
-5. **System prompt generation** — Writes `~/.pablay/system-prompt.md` for centralized agents.
+5. **System prompt generation** — Writes `~/.pablay/system-prompt.md` for centralized agents. Overwrites if already exists (always reflects latest version).
 
-**Idempotent:** Safe to run multiple times. Detects existing hook and skips re-injection. Prints a summary of what was done and reminds the user to `source ~/.zshrc`.
+`pablay install` prints a summary of each action taken and reminds the user to `source ~/.zshrc` (or the relevant rc file).
 
 ---
 
 ### 2. Lazy Auto-Init
 
-Every `pablay` command (except `install` and `init` themselves) checks whether `.pablay/` exists in the resolved root before executing. If it does not exist and the current directory is inside a git repo, Pablay silently runs `init` before proceeding.
+Every `pablay` command (except `install`, `init`, and `projects`) checks whether `.pablay/` exists in the resolved root before executing. `projects` is excluded because it operates on the global registry across multiple projects and must not init the cwd as a side effect. If it does not exist and the current directory is inside a git repo, Pablay silently runs `init` before proceeding. **Lazy init never injects into `CLAUDE.md` or `AGENTS.md`** — that is exclusively a `pablay install` action.
 
-This means:
-- Agents never need to know about `init`; Pablay self-heals on first use
-- A fresh `git clone` + first `pablay list` just works
-- No error is thrown for missing `.pablay/`
+**Pre-action hook call order** (inside `src/cli/index.ts`):
+```
+lazyInit(cwd) → resolveRoot(cwd, global, root) → loadConfig(resolvedRoot) → initTelemetry(config)
+```
 
-Implementation: the existing pre-action hook in `src/cli/index.ts` (currently used for telemetry) is extended to call a `lazyInit(cwd)` helper before every command.
+`lazyInit()` must complete before `resolveRoot()` is called, so that the root is non-null when telemetry initialises.
 
-**`--silent` flag on `init`:** Suppresses all stdout output. Used internally by lazy init and the shell hook so humans only see output when they explicitly run `pablay init`.
+Commander's `preAction` hook receives the current action command as its second argument. The full guard logic inside the hook, executed in this exact order:
+
+```
+1. Validate --root: if set and not absolute path → fail immediately, before lazyInit
+2. Skip lazyInit if any of:
+   - actionCommand.name() is one of ['install', 'init', 'projects']
+   - program.opts().global === true
+   - program.opts().root is set (--root implies targeting a specific known project, not cwd)
+3. lazyInit(cwd)
+4. resolveRoot(cwd, global, root) → store as _resolvedRoot
+5. loadConfig(_resolvedRoot)
+6. initTelemetry(config)
+```
+
+Validating `--root` before `lazyInit()` prevents a `.pablay/` from being created in the cwd on what will ultimately be an erroring command.
+
+The resolved root is stored on the program options object via `program.setOptionValue('_resolvedRoot', resolvedRoot)` inside the pre-action hook. All command handlers read `opts._resolvedRoot` (already injected by the hook) instead of calling `resolveRoot()` themselves. This avoids duplicating `--root`/`--global` logic across every command and ensures a single call site for root resolution.
+
+**Error cases:**
+- In a non-git directory with no `.pablay/` found: fail with clear error — `"Not a git repo and no .pablay/ found. Run 'pablay init' explicitly."`
+- Lazy init fails (e.g. disk full): error is printed to stderr, command aborts. Never silently swallowed.
+
+**`--silent` flag on `init`:** Suppresses stdout only. Errors always go to stderr regardless of `--silent`. Used internally by lazy init and the shell hook.
 
 ---
 
@@ -102,10 +149,12 @@ Schema:
 ]
 ```
 
-**Behaviour:**
-- Every `pablay init` (explicit, lazy, or shell hook) appends the project to the registry if not already present.
-- On every registry read, entries whose `path` no longer exists on disk are silently pruned.
-- `name` defaults to the directory basename.
+- `path` is always the **project root directory** (parent of `.pablay/`), not the `.pablay/` directory itself.
+- `name` defaults to the directory basename. It is informational only — all commands target projects by `path`, never by `name`. No uniqueness constraint. Name collisions are harmless.
+- Every `pablay init` (explicit, lazy, or shell hook) appends to the registry if the path is not already present. Comparison is by exact `path` string.
+- Registry writes are **skipped when `--global` is passed** to `init`. A global init creates `~/.pablay/` itself, which is not a project and must not appear in the registry.
+- `registry.add()` must be self-bootstrapping: it ensures `~/.pablay/` exists (`mkdir -p`) and creates `projects.json` as `[]` if absent before appending. This allows lazy init to write to the registry on machines where `pablay install` has never been run.
+- On every registry read, entries whose `path` no longer exists on disk are silently pruned before the result is returned or displayed.
 
 **New command: `pablay projects`**
 
@@ -113,18 +162,23 @@ Schema:
 pablay projects [--json]
 ```
 
-Lists all registered projects with their path, name, and message count (queried live from each project's SQLite). Stale entries are pruned before output. Supports `--json` for piping.
+Lists all registered projects. For each project, queries its SQLite for a live message count. If a project's SQLite is missing, locked, or corrupt, that project is shown with `count: null` and a `"(unreadable)"` marker — it is not skipped or fatal. Supports `--json` for piping.
 
 ---
 
 ### 4. `--root <path>` Global Flag
 
-Alongside the existing `--global` flag, a new `--root <path>` flag lets any command target an arbitrary project by absolute path:
+A new `--root <path>` global flag lets any command target an arbitrary project by its **project root directory** (the parent of `.pablay/`). The value must be an **absolute path** — if a relative path is provided, the command fails immediately with: `"--root requires an absolute path"`. The flag passes the project root to `resolveRoot()`, which appends `.pablay/` internally.
 
 ```sh
 pablay --root /path/to/project list --type task --status open
 pablay --root /path/to/project create task --title "Review auth PR" --channel backend
 ```
+
+**Precedence rules:**
+- `--root` and `--global` are mutually exclusive. If both are passed, the command fails immediately with: `"--root and --global cannot be used together"`.
+- `--root` takes precedence over the cwd-based walk in `resolveRoot()`.
+- If `--root <path>` points to a directory without a `.pablay/` subdirectory, the command fails with: `"No Pablay store at '<path>/.pablay/'. Run 'pablay init' there first."` Lazy init does **not** fire for `--root` paths.
 
 This is the primary interface for centralized agents. They discover projects via `pablay projects --json`, then read and write to each project's board using `--root`.
 
@@ -134,7 +188,7 @@ This is the primary interface for centralized agents. They discover projects via
 
 #### Project-based agents (Claude Code, Codex)
 
-`pablay install` appends the following section to `CLAUDE.md` and `AGENTS.md` in the current directory (and any project directory when lazy init fires for the first time):
+`pablay install` appends the following section to `CLAUDE.md` and/or `AGENTS.md` in the **current working directory** when those files exist:
 
 ```markdown
 ## Pablay — Task Coordination
@@ -176,11 +230,14 @@ pablay --root <path> list --type task --status open --json
 **Create a task in a project:**
 pablay --root <path> create task --title "..." --channel <area> --author <your-agent-name>
 
-**IMPORTANT — Hard rules:**
+**IMPORTANT — Hard rules for centralized agents:**
 - Never modify files inside a project directory directly
 - Your role is coordination only: create tasks, update status, read context
-- Do not mark tasks complete — that is the project agent's responsibility
+- Do not mark tasks complete — only the project-level agent working inside that repo should do that
 - Always set --author to your agent name so humans can audit your actions
+- --root and --global cannot be used together
+
+Note: project-level agents (Claude Code, Codex) running inside a project directory are permitted to complete tasks. This restriction applies to centralized agents only.
 ```
 
 ---
@@ -197,9 +254,20 @@ pablay --root <path> create task --title "..." --channel <area> --author <your-a
 ### Modified files
 | File | Change |
 |------|--------|
-| `src/cli/index.ts` | Add `--root <path>` global flag; extend pre-action hook with `lazyInit()` |
-| `src/cli/commands/init.ts` | Add `--silent` flag; call `registry.add()` on successful init |
-| `src/core/config.ts` | `resolveRoot()` accepts explicit root path override (for `--root` flag) |
+| `src/cli/index.ts` | Add `--root <path>` global flag; change `preAction` hook signature to `(thisCommand, actionCommand)` so `actionCommand.name()` is available for the lazy-init guard; call `lazyInit()` before `resolveRoot()`; store result as `program.setOptionValue('_resolvedRoot', resolvedRoot)` |
+| `src/cli/commands/init.ts` | Add `--silent` flag; call `registry.add()` on successful init (skip when `--global`) |
+| `src/core/config.ts` | `resolveRoot(cwd, global, root?)` — when `root` is provided, skip directory walk and return `root + '/.pablay'` directly |
+| `src/cli/commands/list.ts` | Replace `resolveRoot()` call with `opts._resolvedRoot` |
+| `src/cli/commands/create.ts` | Replace `resolveRoot()` call with `opts._resolvedRoot` |
+| `src/cli/commands/update.ts` | Refactor `performUpdate()` to accept `resolvedRoot: string` as a parameter instead of computing it internally; all five entry points (`update`, `start`, `complete`, `cancel`, `archive`) pass `opts._resolvedRoot` through |
+| `src/cli/commands/show.ts` | Replace `resolveRoot()` call with `opts._resolvedRoot` |
+| `src/cli/commands/thread.ts` | Replace `resolveRoot()` call with `opts._resolvedRoot` |
+| `src/cli/commands/feed.ts` | Replace `resolveRoot()` call with `opts._resolvedRoot` |
+| `src/cli/commands/log.ts` | Replace `resolveRoot()` call with `opts._resolvedRoot` |
+| `src/cli/commands/sync.ts` | Replace `resolveRoot()` call with `opts._resolvedRoot` |
+| `src/cli/commands/export.ts` | Replace `resolveRoot()` call with `opts._resolvedRoot` |
+| `src/cli/commands/channels.ts` | Replace `resolveRoot()` call with `opts._resolvedRoot` |
+| `src/cli/commands/children.ts` | Replace `resolveRoot()` call with `opts._resolvedRoot` |
 
 ### Generated files (outside repo)
 | File | Generated by |
@@ -207,25 +275,42 @@ pablay --root <path> create task --title "..." --channel <area> --author <your-a
 | `~/.zshrc` / `~/.bashrc` (appended) | `pablay install` |
 | `~/.pablay/projects.json` | `pablay install` + every `init` |
 | `~/.pablay/system-prompt.md` | `pablay install` |
-| `<project>/CLAUDE.md` (appended) | `pablay install` |
-| `<project>/AGENTS.md` (appended) | `pablay install` |
+| `<project>/CLAUDE.md` (appended, if exists) | `pablay install` (cwd only) |
+| `<project>/AGENTS.md` (appended, if exists) | `pablay install` (cwd only) |
 
 ---
 
 ## Error Handling
 
-- `pablay install` on an unsupported shell (fish, etc.): prints a manual snippet instead of injecting automatically
-- Lazy init in a non-git directory with no `.pablay/`: fails with a clear error — "Not a git repo and no .pablay/ found. Run `pablay init` explicitly."
-- `--root <path>` pointing to a path without `.pablay/`: fails with "No Pablay store at `<path>`. Run `pablay init` there first."
-- Registry stale entries: silently pruned, no error
+| Scenario | Behaviour |
+|----------|-----------|
+| `--root` and `--global` both passed | Fail: `"--root and --global cannot be used together"` |
+| `--root <path>` has no `.pablay/` | Fail: `"No Pablay store at '<path>/.pablay/'. Run 'pablay init' there first."` |
+| Lazy init in non-git dir with no `.pablay/` | Fail: `"Not a git repo and no .pablay/ found. Run 'pablay init' explicitly."` |
+| Lazy init fails (e.g. disk full) | Print error to stderr, abort command |
+| `pablay install` on fish/unsupported shell | Print manual snippet to stdout, continue with other install steps |
+| `pablay projects` — project SQLite unreadable | Show `count: null` + `"(unreadable)"` marker, continue |
+| Registry stale entries | Silently pruned on read, no error |
 
 ---
 
 ## Testing
 
-- Unit: `registry.ts` add/read/prune logic
-- Unit: `resolveRoot()` with explicit root path override
-- Unit: `lazyInit()` — git repo detection, silent init trigger
-- Integration: `pablay install` in a temp dir — verify shell file appended, registry created, system prompt written
-- Integration: `pablay projects` — verify stale pruning, live message counts
-- E2E: `pablay list` in a git repo with no `.pablay/` — verify lazy init fires and command succeeds
+| Type | Case |
+|------|------|
+| Unit | `registry.ts` — add, read, prune stale entries |
+| Unit | `resolveRoot()` with explicit `root` override |
+| Unit | `resolveRoot()` with `--root` + `--global` both set returns error |
+| Unit | `lazyInit()` — git repo detection, triggers silent init |
+| Unit | `lazyInit()` — non-git dir, no `.pablay/`, returns error |
+| Unit | `--silent` flag suppresses stdout, not stderr |
+| Integration | `pablay install` in a temp dir — verify shell rc appended with marker, registry created, system prompt written |
+| Integration | `pablay install` run twice — verify shell rc not double-injected |
+| Integration | `pablay projects` — verify stale pruning, live message counts, unreadable SQLite shows null |
+| Integration | `pablay --root <path> list` — targets correct project, not cwd |
+| E2E | `pablay list` in a git repo with no `.pablay/` — lazy init fires, command succeeds |
+| E2E | `pablay list` in a non-git dir with no `.pablay/` — returns clear error |
+| Unit | `resolveRoot()` with a relative `root` argument — returns error |
+| Unit | `pablay init --global` — registry is not written |
+| Integration | `pablay install` in a temp dir with no `CLAUDE.md`/`AGENTS.md` — verify neither file is created |
+| Integration | `pablay --root <relative-path> list` — fails with `"--root requires an absolute path"` |
