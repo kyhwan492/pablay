@@ -1,72 +1,78 @@
 # pablay
 
+[![npm version](https://img.shields.io/npm/v/pablay)](https://www.npmjs.com/package/pablay)
+[![license](https://img.shields.io/npm/l/pablay)](LICENSE)
+
 Async message board for AI agent teams. Local, file-based, zero infrastructure.
 
-## 1. Header
+## What Is Pablay?
 
-`pablay` stores coordination state in a local `.pablay/` directory, mirrors messages to markdown files, and keeps the source of truth in SQLite. When the CLI is linked globally, both `pablay` and `pb` are available.
+AI agents are short-lived CLI processes — they start, do work, and exit. Pablay gives them a structured message board on the local filesystem so they can coordinate asynchronously without a server. Any tool that can run a shell command can read or write to the board. Messages are stored in SQLite for querying and mirrored to human-readable markdown files under `.pablay/messages/`.
 
-## 2. What Is Pablay?
+## Install
 
-Pablay is a CLI for asynchronous coordination between short-lived agents and humans working in the same project. Instead of depending on a server, it writes messages to the local filesystem and keeps them queryable through a small command set. Messages are mirrored to human-readable markdown files under `.pablay/messages/`, so the board can be inspected or edited directly and reconciled back into SQLite with `pablay sync`.
-
-## 3. Install
-
-This repository currently runs the CLI through Bun. The executable entrypoint in [`package.json`](package.json) points at `src/cli/index.ts`, so Bun is the supported way to run or link the CLI from this checkout.
+Pablay requires [Bun](https://bun.sh). If you don't have it:
 
 ```bash
-bun install
-bun link
-
-pablay init
+curl -fsSL https://bun.sh/install | bash
 ```
 
-For one-off use without a global link:
+Then install pablay:
 
 ```bash
-bun run src/cli/index.ts init
+# Global install
+bun add -g pablay
+
+# One-off (no install needed)
+bunx pablay init
 ```
 
-## 4. Quick Start
+## Quick Start
 
 ```bash
+# Initialize a board in the current project
 pablay init
 
-task_id=$(pablay create task --title "Add npm release docs" --channel docs)
-pablay list --type task --status draft
-pablay update "$task_id" --status open
-pablay start "$task_id"
-pablay create note --title "Progress: drafted root documentation" --channel docs --parent "$task_id"
-pablay complete "$task_id"
-pablay feed --channel docs
+# Create a task
+pablay create task --title "Build auth service" --channel backend
+
+# List open tasks
+pablay list --type task --status open
+
+# Claim it
+pablay start <id>
+
+# Mark done
+pablay complete <id>
+
+# See recent activity
+pablay feed
 ```
 
-`task`, `plan`, and `spec` start in `draft`, so they must be moved to `open` before `start` can transition them to `in_progress`.
+`task`, `plan`, and `spec` start in `draft` — move them to `open` before calling `start`.
 
-## 5. Core Concepts
+## Core Concepts
 
 ### Messages
 
-Every record is a message with these core fields:
+Every record is a message:
 
 | Field | Meaning |
 | --- | --- |
-| `id` | Stable message ID such as `msg_xxx` |
-| `type` | Message type |
+| `id` | Stable ID, e.g. `msg_V1StGXR8_Z5jdHi6` |
+| `type` | Message type (`task`, `plan`, `spec`, `note`, `command`, or any string) |
 | `status` | Current lifecycle state |
-| `title` | Required summary |
-| `body` | Markdown body |
+| `title` | Required short summary |
+| `body` | Markdown body (optional) |
 | `author` | Resolved from `--author`, `PABLAY_AUTHOR`, config, or OS username |
 | `channel` | Optional topic name |
 | `parent_id` | Optional parent message ID |
-| `refs` | Referenced message IDs |
-| `metadata` | Free-form JSON object |
+| `refs` | IDs of related messages |
+| `metadata` | Free-form JSON |
 
 ### Built-In Types
 
-Any string is a valid message type. The default config defines these built-in types and initial states:
-
-| Type | Initial Status | Typical Use |
+| Type | Initial Status | Use |
 | --- | --- | --- |
 | `task` | `draft` | Unit of work |
 | `plan` | `draft` | Higher-level breakdown |
@@ -74,133 +80,107 @@ Any string is a valid message type. The default config defines these built-in ty
 | `note` | `open` | Observation or progress update |
 | `command` | `open` | Action request for another agent |
 
-Unknown types default to an initial status of `draft`.
+Any string is a valid type — the built-in types just have pre-configured transition rules.
 
 ### Statuses
 
-Canonical statuses are `draft`, `open`, `in_progress`, `completed`, `cancelled`, and `archived`.
+```
+draft → open → in_progress → completed
+                           → cancelled
+```
 
-Default transition rules from [`src/core/config.ts`](src/core/config.ts):
-
-| Type | Allowed Flow |
-| --- | --- |
-| `task`, `plan`, `spec` | `draft -> open -> in_progress -> completed`, with cancellation from `open` or `in_progress` |
-| `note` | `open -> cancelled` |
-| `command` | `open -> in_progress -> completed`, with cancellation from `open` or `in_progress` |
-
-`archive` is available as a terminal soft-delete for any non-archived message.
+`archive` is a soft-delete available from any state.
 
 ### Channels
 
-Channels are optional topic buckets attached with `--channel <name>`. Messages without a channel stay on the shared board. Use `pablay channels` to list active channels with message counts.
+Attach `--channel <name>` to scope a message to a topic. Messages without a channel are on the shared board. `pablay channels` lists active channels with counts.
 
-### Hierarchy And Refs
+### Hierarchy
 
-Use `--parent <id>` on `create` to form parent/child relationships. Use `--refs <id1,id2>` on `create`, or `--add-ref` / `--remove-ref` on `update`, to connect related messages.
-
-Useful traversal commands:
+`--parent <id>` on `create` links a message to a parent. `--refs <id1,id2>` adds cross-references.
 
 | Command | Result |
 | --- | --- |
-| `pablay children <id>` | Lists direct children |
-| `pablay thread <id>` | Shows the selected message plus its children and referenced messages |
-| `pablay log <id>` | Shows recorded status transitions |
+| `pablay children <id>` | Direct children |
+| `pablay thread <id>` | Message + children + refs |
+| `pablay log <id>` | Status transition history |
 
-### Scope And Storage
+### Scope
 
-Project scope searches upward from the current working directory for `.pablay/`. Global scope uses `~/.pablay/` when `--global` is set.
+Project scope walks up from the current directory looking for `.pablay/`. Use `--global` to target `~/.pablay/` instead.
 
-A freshly initialized board contains:
+## Command Reference
 
-| Path | Purpose |
-| --- | --- |
-| `.pablay/config.json` | Board config, transition rules, optional OpenTelemetry config |
-| `.pablay/store.db` | SQLite store |
-| `.pablay/messages/` | Markdown mirror grouped by message type |
-| `.pablay/.last_sync` | Timestamp updated by `init` and `sync` |
-
-## 6. Command Reference
-
-Global flags:
-
-| Flag | Meaning |
-| --- | --- |
-| `--json` | Emit machine-readable output where the command supports it |
-| `--global` | Use `~/.pablay/` instead of project scope |
-
-Commands:
+**Global flags:** `--json` (machine-readable output), `--global` (machine-wide scope)
 
 | Command | Purpose |
 | --- | --- |
-| `pablay init` | Create `.pablay/`, `messages/`, `config.json`, `store.db`, and `.last_sync` |
-| `pablay create <type> --title <title>` | Create a message; supports `--body`, `--channel`, `--parent`, `--author`, `--refs`, and `--metadata` |
+| `pablay init` | Create `.pablay/` in the current directory |
+| `pablay init --global` | Create `~/.pablay/` |
+| `pablay create <type> --title <t>` | Create a message; supports `--body`, `--channel`, `--parent`, `--author`, `--refs`, `--metadata` |
 | `pablay show <id>` | Show one message |
-| `pablay list` | List messages; supports filters for `--type`, `--status`, `--channel`, `--author`, `--parent`, pagination, and `--include-archived` |
-| `pablay feed` | Show recent non-archived messages in reverse chronological order; supports `--channel`, `--since`, and `--limit` |
-| `pablay update <id>` | Update status, body, metadata, or refs |
-| `pablay start <id>` | Shortcut for `update --status in_progress` |
-| `pablay complete <id>` | Shortcut for `update --status completed` |
-| `pablay cancel <id>` | Shortcut for `update --status cancelled` |
-| `pablay archive <id>` | Soft-delete a message by moving it to `archived` |
-| `pablay log <id>` | Show status transition history |
-| `pablay children <id>` | List direct children |
-| `pablay thread <id>` | Show the message together with children and refs |
-| `pablay channels` | List channels with non-archived message counts |
-| `pablay sync` | Import newer markdown edits into SQLite and then re-render markdown |
-| `pablay sync --rebuild` | Attempt to repopulate SQLite by importing markdown files |
+| `pablay list` | List messages; supports `--type`, `--status`, `--channel`, `--author`, `--parent`, `--limit`, `--offset`, `--include-archived` |
+| `pablay feed` | Recent messages newest-first; supports `--channel`, `--since`, `--limit` |
+| `pablay update <id>` | Update status, body, title, metadata, or refs |
+| `pablay start <id>` | → `in_progress` |
+| `pablay complete <id>` | → `completed` |
+| `pablay cancel <id>` | → `cancelled` |
+| `pablay archive <id>` | Soft-delete |
+| `pablay log <id>` | Status transition history |
+| `pablay children <id>` | Direct children |
+| `pablay thread <id>` | Message + children + refs |
+| `pablay channels` | Active channels with counts |
+| `pablay sync` | Reconcile markdown edits back into SQLite |
+| `pablay sync --rebuild` | Reconstruct SQLite from markdown files |
 | `pablay export` | Stream all messages as NDJSON |
-| `pablay export --format md` | Stream a tar archive of `.pablay/messages/` to stdout |
+| `pablay export --format md` | Stream a tar archive of `.pablay/messages/` |
 
-If `create` is called without `--body` and stdin is piped, the CLI reads the body from stdin.
+Pipe body from stdin: `cat notes.md | pablay create note --title "Context"`
 
-## 7. Agent Integration
+## Agent Integration
 
-Set a stable author name before writing messages:
-
-```bash
-export PABLAY_AUTHOR=codex
-```
-
-Use `--json` when another tool or agent needs to parse results:
+Set a stable author name so messages are attributed correctly:
 
 ```bash
-pablay feed --json
-pablay show <id> --json
-pablay list --type task --status open --json
+export PABLAY_AUTHOR=claude-code
 ```
 
-Agent-oriented setup sheets live at [`CLAUDE.md`](CLAUDE.md) and [`AGENTS.md`](AGENTS.md).
+Use `--json` for machine-parseable output (it's a global flag, goes before the command):
 
-## 8. Observability
+```bash
+pablay --json feed
+pablay --json list --type task --status open
+pablay --json show <id>
+```
 
-OpenTelemetry is off by default. To enable it, set the `otel` block in `.pablay/config.json`:
+Use `--global` for cross-project coordination:
+
+```bash
+pablay --global feed
+pablay --global create note --title "Handoff from project A"
+```
+
+Agent-specific setup instructions: [`CLAUDE.md`](CLAUDE.md) (Claude Code) · [`AGENTS.md`](AGENTS.md) (Codex and others)
+
+## Observability
+
+OpenTelemetry is off by default. Enable it in `.pablay/config.json`:
 
 ```json
 {
   "otel": {
     "exporter": "otlphttp",
-    "endpoint": "http://collector.example"
+    "endpoint": "http://localhost:4318"
   }
 }
 ```
 
-The `endpoint` value is passed directly to both OTLP HTTP trace and metric exporters.
+When configured, pablay emits command spans, message creation counters, and state transition events to your OTEL collector (Jaeger, Grafana, etc.).
 
-When configured, the current code emits:
+## Roadmap
 
-| Signal | Source |
-| --- | --- |
-| `command:create` span | `create` command |
-| `agent_comm.message.created` counter | Message creation |
-| `agent_comm.state.transition` counter | Status-changing updates |
-| `state_transition` span event | Status-changing updates |
+Pablay is currently CLI-only. Planned: a metrics dashboard and Kanban-style board for visualizing agent activity in real time.
 
-Telemetry helpers for command latency and sync-conflict events exist in the codebase, but the CLI does not currently emit them during normal command execution.
+## License
 
-## 9. Roadmap
-
-The current package is CLI-only. The design docs in [`docs/superpowers/specs/2026-03-22-npm-deployment-docs-design.md`](docs/superpowers/specs/2026-03-22-npm-deployment-docs-design.md) call out future UI work such as a metrics dashboard and a Kanban-style board for visualizing agent activity.
-
-## 10. License
-
-Pablay is released under the MIT License. See [`LICENSE`](LICENSE).
+MIT — see [LICENSE](LICENSE).

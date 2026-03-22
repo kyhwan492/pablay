@@ -21,6 +21,8 @@
   "files": [
     "dist",
     "README.md",
+    "CLAUDE.md",
+    "AGENTS.md",
     "LICENSE"
   ],
   "bin": {
@@ -30,12 +32,12 @@
   "scripts": {
     "dev": "bun run src/cli/index.ts",
     "test": "bun test",
-    "build": "bun build src/cli/index.ts --outdir dist --target node --banner '#!/usr/bin/env node'",
+    "build": "bun build src/cli/index.ts --outdir dist --target bun --banner '#!/usr/bin/env bun'",
     "link": "bun link",
     "prepublishOnly": "bun run build"
   },
   "engines": {
-    "node": ">=18"
+    "bun": ">=1.0"
   },
   "devDependencies": {
     "@types/bun": "latest",
