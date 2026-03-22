@@ -1,5 +1,5 @@
 import type { Command } from "commander";
-import { resolveRoot, loadConfig, resolveAuthor } from "../../core/config";
+import { loadConfig, resolveAuthor } from "../../core/config";
 import { Store } from "../../core/store";
 import { validateTransition } from "../../core/message";
 import { SyncEngine } from "../../core/sync";
@@ -9,17 +9,12 @@ import { recordStateTransition } from "../../telemetry/metrics";
 import { logStateTransition } from "../../telemetry/logs";
 
 function performUpdate(
-  program: Command,
+  resolvedRoot: string,
+  globalJson: boolean,
   id: string,
   opts: { status?: string; body?: string; metadata?: string; addRef?: string; removeRef?: string; author?: string }
 ): void {
-  const globalOpts = program.opts();
-  const root = resolveRoot(process.cwd(), globalOpts.global);
-  if (!root) {
-    console.error("No .pablay/ found. Run `pablay init` first.");
-    process.exit(1);
-  }
-
+  const root = resolvedRoot;
   const config = loadConfig(root);
   const store = new Store(join(root, "store.db"));
   const msg = store.getById(id);
@@ -59,7 +54,7 @@ function performUpdate(
   const sync = new SyncEngine(store, join(root, "messages"));
   sync.renderOne(id);
 
-  if (globalOpts.json) {
+  if (globalJson) {
     const updated = store.getById(id);
     console.log(JSON.stringify(updated, null, 2));
   } else {
@@ -81,7 +76,7 @@ export function registerUpdate(program: Command): void {
     .option("--author <author>", "Author of this change")
     .action((id: string, opts: any) => {
       try {
-        performUpdate(program, id, opts);
+        performUpdate(program.opts()._resolvedRoot as string, program.opts().json as boolean, id, opts);
       } catch (e: any) {
         console.error(e.message);
         process.exit(1);
@@ -102,7 +97,7 @@ export function registerUpdate(program: Command): void {
       .option("--author <author>", "Author of this change")
       .action((id: string, opts: any) => {
         try {
-          performUpdate(program, id, { ...opts, status });
+          performUpdate(program.opts()._resolvedRoot as string, program.opts().json as boolean, id, { ...opts, status });
         } catch (e: any) {
           console.error(e.message);
           process.exit(1);

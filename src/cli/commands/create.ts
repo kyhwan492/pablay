@@ -1,5 +1,5 @@
 import type { Command } from "commander";
-import { resolveRoot, loadConfig, resolveAuthor } from "../../core/config";
+import { loadConfig, resolveAuthor } from "../../core/config";
 import { Store } from "../../core/store";
 import { createMessage } from "../../core/message";
 import { SyncEngine } from "../../core/sync";
@@ -22,11 +22,7 @@ export function registerCreate(program: Command): void {
       const span = startCommandSpan("create");
       try {
         const globalOpts = program.opts();
-        const root = resolveRoot(process.cwd(), globalOpts.global);
-        if (!root) {
-          console.error("No .pablay/ found. Run `pablay init` first.");
-          process.exit(1);
-        }
+        const root = globalOpts._resolvedRoot as string;
 
         const config = loadConfig(root);
         const author = resolveAuthor(config, opts.author);

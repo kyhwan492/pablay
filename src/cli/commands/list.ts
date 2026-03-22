@@ -1,5 +1,4 @@
 import type { Command } from "commander";
-import { resolveRoot } from "../../core/config";
 import { Store } from "../../core/store";
 import { formatMessageList } from "../formatters/text";
 import { formatMessageListJson } from "../formatters/json";
@@ -19,11 +18,7 @@ export function registerList(program: Command): void {
     .option("--include-archived", "Include archived messages")
     .action((opts: any) => {
       const globalOpts = program.opts();
-      const root = resolveRoot(process.cwd(), globalOpts.global);
-      if (!root) {
-        console.error("No .pablay/ found. Run `pablay init` first.");
-        process.exit(1);
-      }
+      const root = globalOpts._resolvedRoot as string;
 
       const store = new Store(join(root, "store.db"));
       const messages = store.list(
