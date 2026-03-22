@@ -28,7 +28,8 @@ describe("resolveRoot", () => {
   });
 
   test("returns null if not found", () => {
-    const root = resolveRoot(NESTED_DIR);
+    // Must use a path outside the project tree so the walk-up doesn't find the project's own .pablay/
+    const root = resolveRoot("/tmp");
     expect(root).toBeNull();
   });
 

@@ -31,10 +31,11 @@ describe("error handling", () => {
     expect(result.exitCode).toBe(2);
   });
 
-  test("show without init → exit 1 with helpful message", async () => {
-    // TEST_DIR has no .pablay/ — do not run init
-    const result = await run(TEST_DIR, ["show", "msg_anything"]);
-    expect(result.exitCode).toBe(1);
+  test("show with no matching message → exit 2", async () => {
+    // lazy init auto-initializes .pablay/ since TEST_DIR is inside a git repo;
+    // show then exits 2 (message not found), not 1
+    const result = await run(TEST_DIR, ["show", "msg_doesnotexist_lazy"]);
+    expect(result.exitCode).toBe(2);
     expect(result.stderr.length).toBeGreaterThan(0);
   });
 
