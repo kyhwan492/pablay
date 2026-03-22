@@ -5,10 +5,10 @@
   "type": "module",
   "author": "Yonghwan Kim <kyhwan492@naver.com>",
   "license": "MIT",
-  "homepage": "https://github.com/yonghwan/Pablay",
+  "homepage": "https://github.com/kyhwan492/pablay",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/yonghwan/Pablay.git"
+    "url": "git+https://github.com/kyhwan492/pablay.git"
   },
   "keywords": [
     "ai-agent",
