@@ -1,14 +1,16 @@
 import type { Command } from "commander";
 import { existsSync, mkdirSync, writeFileSync } from "fs";
-import { join } from "path";
+import { join, resolve } from "path";
 import { Store } from "../../core/store";
 import { defaultConfig } from "../../core/config";
+import { add } from "../../core/registry";
 
 export function registerInit(program: Command): void {
   program
     .command("init")
     .description("Initialize .pablay/ in the current directory")
-    .action(() => {
+    .option("--silent", "Suppress output")
+    .action((cmdOpts: any) => {
       const opts = program.opts();
       const root = opts.global
         ? join(process.env.HOME ?? "", ".pablay")
@@ -30,6 +32,12 @@ export function registerInit(program: Command): void {
         writeFileSync(lastSyncPath, new Date().toISOString(), "utf-8");
       }
 
-      console.log(`Initialized ${root}`);
+      if (!opts.global) {
+        add(resolve(root, ".."));
+      }
+
+      if (!cmdOpts.silent) {
+        console.log(`Initialized ${root}`);
+      }
     });
 }
