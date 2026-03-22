@@ -15,16 +15,16 @@ afterEach(() => {
 });
 
 describe("resolveRoot", () => {
-  test("finds .agent-comm in current directory", () => {
-    mkdirSync(join(TEST_DIR, ".agent-comm"));
+  test("finds .pablay in current directory", () => {
+    mkdirSync(join(TEST_DIR, ".pablay"));
     const root = resolveRoot(TEST_DIR);
-    expect(root).toBe(join(TEST_DIR, ".agent-comm"));
+    expect(root).toBe(join(TEST_DIR, ".pablay"));
   });
 
-  test("walks up to find .agent-comm", () => {
-    mkdirSync(join(TEST_DIR, ".agent-comm"));
+  test("walks up to find .pablay", () => {
+    mkdirSync(join(TEST_DIR, ".pablay"));
     const root = resolveRoot(NESTED_DIR);
-    expect(root).toBe(join(TEST_DIR, ".agent-comm"));
+    expect(root).toBe(join(TEST_DIR, ".pablay"));
   });
 
   test("returns null if not found", () => {
@@ -32,28 +32,28 @@ describe("resolveRoot", () => {
     expect(root).toBeNull();
   });
 
-  test("global scope returns ~/.agent-comm", () => {
+  test("global scope returns ~/.pablay", () => {
     const root = resolveRoot(TEST_DIR, true);
-    expect(root).toBe(join(process.env.HOME!, ".agent-comm"));
+    expect(root).toBe(join(process.env.HOME!, ".pablay"));
   });
 });
 
 describe("loadConfig", () => {
   test("returns default config if no config.json", () => {
-    mkdirSync(join(TEST_DIR, ".agent-comm"));
-    const config = loadConfig(join(TEST_DIR, ".agent-comm"));
+    mkdirSync(join(TEST_DIR, ".pablay"));
+    const config = loadConfig(join(TEST_DIR, ".pablay"));
     expect(config.version).toBe(1);
     expect(config.transitions.task.initial).toBe("draft");
     expect(config.transitions.note.initial).toBe("open");
   });
 
   test("loads config from file", () => {
-    mkdirSync(join(TEST_DIR, ".agent-comm"));
+    mkdirSync(join(TEST_DIR, ".pablay"));
     writeFileSync(
-      join(TEST_DIR, ".agent-comm", "config.json"),
+      join(TEST_DIR, ".pablay", "config.json"),
       JSON.stringify({ version: 1, author: "my-agent", transitions: {}, otel: null })
     );
-    const config = loadConfig(join(TEST_DIR, ".agent-comm"));
+    const config = loadConfig(join(TEST_DIR, ".pablay"));
     expect(config.author).toBe("my-agent");
   });
 });

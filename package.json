@@ -1,9 +1,9 @@
 {
-  "name": "agent-comm",
+  "name": "pablay",
   "type": "module",
   "bin": {
-    "ac": "src/cli/index.ts",
-    "agent-comm": "src/cli/index.ts"
+    "pablay": "src/cli/index.ts",
+    "pb": "src/cli/index.ts"
   },
   "scripts": {
     "dev": "bun run src/cli/index.ts",

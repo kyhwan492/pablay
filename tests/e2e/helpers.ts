@@ -11,7 +11,7 @@ export async function run(
     cwd: dir,
     stdout: "pipe",
     stderr: "pipe",
-    env: { ...process.env, AC_AUTHOR: "test-agent", ...env },
+    env: { ...process.env, PABLAY_AUTHOR: "test-agent", ...env },
   });
   const stdout = await new Response(proc.stdout).text();
   const stderr = await new Response(proc.stderr).text();

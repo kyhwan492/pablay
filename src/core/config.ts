@@ -35,12 +35,12 @@ export function defaultConfig(): Config {
 
 export function resolveRoot(cwd: string, global = false): string | null {
   if (global) {
-    return join(process.env.HOME ?? userInfo().homedir, ".agent-comm");
+    return join(process.env.HOME ?? userInfo().homedir, ".pablay");
   }
 
   let dir = cwd;
   while (true) {
-    const candidate = join(dir, ".agent-comm");
+    const candidate = join(dir, ".pablay");
     if (existsSync(candidate)) {
       return candidate;
     }
@@ -70,7 +70,7 @@ export function loadConfig(root: string): Config {
 
 export function resolveAuthor(config: Config, cliAuthor?: string): string {
   if (cliAuthor) return cliAuthor;
-  if (process.env.AC_AUTHOR) return process.env.AC_AUTHOR;
+  if (process.env.PABLAY_AUTHOR) return process.env.PABLAY_AUTHOR;
   if (config.author) return config.author;
   return userInfo().username;
 }

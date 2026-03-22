@@ -7,12 +7,12 @@ import { defaultConfig } from "../../core/config";
 export function registerInit(program: Command): void {
   program
     .command("init")
-    .description("Initialize .agent-comm/ in the current directory")
+    .description("Initialize .pablay/ in the current directory")
     .action(() => {
       const opts = program.opts();
       const root = opts.global
-        ? join(process.env.HOME ?? "", ".agent-comm")
-        : join(process.cwd(), ".agent-comm");
+        ? join(process.env.HOME ?? "", ".pablay")
+        : join(process.cwd(), ".pablay");
 
       mkdirSync(root, { recursive: true });
       mkdirSync(join(root, "messages"), { recursive: true });

@@ -23,7 +23,7 @@ describe("command / pickup pattern", () => {
       TEST_DIR,
       ["create", "command", "--title", "Run test suite", "--channel", "commands",
        "--metadata", '{"to":"worker-agent","args":["--coverage"]}'],
-      { AC_AUTHOR: "orchestrator" }
+      { PABLAY_AUTHOR: "orchestrator" }
     );
     expect(create.exitCode).toBe(0);
     const cmdId = create.stdout;
@@ -32,25 +32,25 @@ describe("command / pickup pattern", () => {
     const feed = await run(
       TEST_DIR,
       ["feed", "--channel", "commands", "--json"],
-      { AC_AUTHOR: "worker" }
+      { PABLAY_AUTHOR: "worker" }
     );
     const msgs = JSON.parse(feed.stdout);
     expect(msgs.find((m: any) => m.id === cmdId)).toBeDefined();
 
     // Worker starts the command (open → in_progress)
-    const startResult = await run(TEST_DIR, ["start", cmdId], { AC_AUTHOR: "worker" });
+    const startResult = await run(TEST_DIR, ["start", cmdId], { PABLAY_AUTHOR: "worker" });
     expect(startResult.exitCode).toBe(0);
 
     // Worker completes the command with result metadata
     const completeResult = await run(
       TEST_DIR,
       ["complete", cmdId, "--metadata", '{"result":"all 42 tests passed"}'],
-      { AC_AUTHOR: "worker" }
+      { PABLAY_AUTHOR: "worker" }
     );
     expect(completeResult.exitCode).toBe(0);
 
     // Orchestrator verifies completion
-    const show = await run(TEST_DIR, ["show", cmdId, "--json"], { AC_AUTHOR: "orchestrator" });
+    const show = await run(TEST_DIR, ["show", cmdId, "--json"], { PABLAY_AUTHOR: "orchestrator" });
     const msg = JSON.parse(show.stdout);
     expect(msg.status).toBe("completed");
     expect(msg.metadata.result).toBe("all 42 tests passed");
@@ -67,7 +67,7 @@ describe("context handoff", () => {
       TEST_DIR,
       ["create", "note", "--title", "Handoff: auth context",
        "--body", "Session context for agent-b", "--channel", "handoff"],
-      { AC_AUTHOR: "agent-a" }
+      { PABLAY_AUTHOR: "agent-a" }
     );
     expect(noteCreate.exitCode).toBe(0);
     const noteId = noteCreate.stdout;
@@ -76,7 +76,7 @@ describe("context handoff", () => {
     const feed = await run(
       TEST_DIR,
       ["feed", "--channel", "handoff", "--json"],
-      { AC_AUTHOR: "agent-b" }
+      { PABLAY_AUTHOR: "agent-b" }
     );
     const msgs = JSON.parse(feed.stdout);
     expect(msgs.find((m: any) => m.id === noteId)).toBeDefined();
@@ -85,7 +85,7 @@ describe("context handoff", () => {
     const taskCreate = await run(
       TEST_DIR,
       ["create", "task", "--title", "Implement auth from handoff", "--refs", noteId],
-      { AC_AUTHOR: "agent-b" }
+      { PABLAY_AUTHOR: "agent-b" }
     );
     expect(taskCreate.exitCode).toBe(0);
     const taskId = taskCreate.stdout;
@@ -113,13 +113,13 @@ describe("plan → task breakdown + session resume", () => {
     const planCreate = await run(
       TEST_DIR,
       ["create", "plan", "--title", "Q2 Roadmap", "--channel", "planning"],
-      { AC_AUTHOR: "orchestrator" }
+      { PABLAY_AUTHOR: "orchestrator" }
     );
     const planId = planCreate.stdout;
 
-    const task1 = await run(TEST_DIR, ["create", "task", "--title", "Task A", "--parent", planId], { AC_AUTHOR: "orchestrator" });
-    const task2 = await run(TEST_DIR, ["create", "task", "--title", "Task B", "--parent", planId], { AC_AUTHOR: "orchestrator" });
-    const task3 = await run(TEST_DIR, ["create", "task", "--title", "Task C", "--parent", planId], { AC_AUTHOR: "orchestrator" });
+    const task1 = await run(TEST_DIR, ["create", "task", "--title", "Task A", "--parent", planId], { PABLAY_AUTHOR: "orchestrator" });
+    const task2 = await run(TEST_DIR, ["create", "task", "--title", "Task B", "--parent", planId], { PABLAY_AUTHOR: "orchestrator" });
+    const task3 = await run(TEST_DIR, ["create", "task", "--title", "Task C", "--parent", planId], { PABLAY_AUTHOR: "orchestrator" });
 
     const afterPlan = new Date().toISOString();
 
@@ -133,9 +133,9 @@ describe("plan → task breakdown + session resume", () => {
     // Agent progresses each task through the full lifecycle
     for (const taskResult of [task1, task2, task3]) {
       const id = taskResult.stdout;
-      await run(TEST_DIR, ["update", id, "--status", "open"], { AC_AUTHOR: "worker" });
-      await run(TEST_DIR, ["start", id], { AC_AUTHOR: "worker" });
-      await run(TEST_DIR, ["complete", id], { AC_AUTHOR: "worker" });
+      await run(TEST_DIR, ["update", id, "--status", "open"], { PABLAY_AUTHOR: "worker" });
+      await run(TEST_DIR, ["start", id], { PABLAY_AUTHOR: "worker" });
+      await run(TEST_DIR, ["complete", id], { PABLAY_AUTHOR: "worker" });
     }
 
     // All children of the plan should be completed

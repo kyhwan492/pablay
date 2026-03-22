@@ -21,7 +21,7 @@ export function registerList(program: Command): void {
       const globalOpts = program.opts();
       const root = resolveRoot(process.cwd(), globalOpts.global);
       if (!root) {
-        console.error("No .agent-comm/ found. Run `ac init` first.");
+        console.error("No .pablay/ found. Run `pablay init` first.");
         process.exit(1);
       }
 

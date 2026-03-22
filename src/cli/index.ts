@@ -18,10 +18,10 @@ import { loadConfig, resolveRoot } from "../core/config";
 const program = new Command();
 
 program
-  .name("ac")
+  .name("pablay")
   .description("Async communication tool for agent teams")
   .version("0.1.0")
-  .option("--global", "Use machine-wide scope (~/.agent-comm)")
+  .option("--global", "Use machine-wide scope (~/.pablay)")
   .option("--json", "Output in JSON format");
 
 registerInit(program);

@@ -32,7 +32,7 @@ describe("error handling", () => {
   });
 
   test("show without init → exit 1 with helpful message", async () => {
-    // TEST_DIR has no .agent-comm/ — do not run init
+    // TEST_DIR has no .pablay/ — do not run init
     const result = await run(TEST_DIR, ["show", "msg_anything"]);
     expect(result.exitCode).toBe(1);
     expect(result.stderr.length).toBeGreaterThan(0);
@@ -55,7 +55,7 @@ describe("error handling", () => {
     const id = create.stdout;
 
     // Read the markdown file and overwrite with a newer updated_at and changed title
-    const mdPath = join(TEST_DIR, ".agent-comm", "messages", "task", `${id}.md`);
+    const mdPath = join(TEST_DIR, ".pablay", "messages", "task", `${id}.md`);
     const content = Bun.file(mdPath);
     const original = await content.text();
 
@@ -78,7 +78,7 @@ describe("error handling", () => {
     const create = await run(TEST_DIR, ["create", "task", "--title", "Stable title"]);
     const id = create.stdout;
 
-    const mdPath = join(TEST_DIR, ".agent-comm", "messages", "task", `${id}.md`);
+    const mdPath = join(TEST_DIR, ".pablay", "messages", "task", `${id}.md`);
     const original = await Bun.file(mdPath).text();
 
     // Change the title but keep updated_at the same (no bump → markdown is not newer)
@@ -97,7 +97,7 @@ describe("error handling", () => {
     await run(TEST_DIR, ["create", "task", "--title", "Real task"]);
 
     // Place a file with no frontmatter inside the task type subdirectory
-    const taskDir = join(TEST_DIR, ".agent-comm", "messages", "task");
+    const taskDir = join(TEST_DIR, ".pablay", "messages", "task");
     writeFileSync(join(taskDir, "bad.md"), "no frontmatter here", "utf-8");
 
     const result = await run(TEST_DIR, ["sync"]);

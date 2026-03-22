@@ -51,8 +51,8 @@ describe("full agent workflow", () => {
     expect(logEntries.length).toBeGreaterThanOrEqual(3);
 
     // Verify markdown files exist
-    expect(existsSync(join(TEST_DIR, ".agent-comm", "messages", "plan", `${planId}.md`))).toBe(true);
-    expect(existsSync(join(TEST_DIR, ".agent-comm", "messages", "task", `${task1Id}.md`))).toBe(true);
+    expect(existsSync(join(TEST_DIR, ".pablay", "messages", "plan", `${planId}.md`))).toBe(true);
+    expect(existsSync(join(TEST_DIR, ".pablay", "messages", "task", `${task1Id}.md`))).toBe(true);
 
     // Check channels
     const channels = await run(TEST_DIR, ["channels", "--json"]);

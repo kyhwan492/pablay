@@ -1,7 +1,7 @@
 import { trace, metrics, type Tracer, type Meter } from "@opentelemetry/api";
 import type { OtelConfig } from "../types.ts";
 
-const INSTRUMENTATION_NAME = "agent-comm";
+const INSTRUMENTATION_NAME = "pablay";
 
 let initialized = false;
 let sdkShutdown: (() => Promise<void>) | null = null;
