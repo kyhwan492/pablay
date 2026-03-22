@@ -33,7 +33,11 @@ export function defaultConfig(): Config {
   };
 }
 
-export function resolveRoot(cwd: string, global = false): string | null {
+export function resolveRoot(cwd: string, global = false, root?: string): string | null {
+  if (root !== undefined) {
+    return join(root, ".pablay");
+  }
+
   if (global) {
     return join(process.env.HOME ?? userInfo().homedir, ".pablay");
   }
