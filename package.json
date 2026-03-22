@@ -1,15 +1,41 @@
 {
   "name": "pablay",
+  "version": "0.1.0",
+  "description": "Async message board for AI agent teams — local, file-based, no servers",
   "type": "module",
+  "author": "Yonghwan Kim <kyhwan492@naver.com>",
+  "license": "MIT",
+  "homepage": "https://github.com/yonghwan/Pablay",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yonghwan/Pablay.git"
+  },
+  "keywords": [
+    "ai-agent",
+    "agent-communication",
+    "cli",
+    "async",
+    "claude-code",
+    "codex"
+  ],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "bin": {
-    "pablay": "src/cli/index.ts",
-    "pb": "src/cli/index.ts"
+    "pablay": "dist/index.js",
+    "pb": "dist/index.js"
   },
   "scripts": {
     "dev": "bun run src/cli/index.ts",
     "test": "bun test",
-    "build": "bun build src/cli/index.ts --outdir dist --target node",
-    "link": "bun link"
+    "build": "bun build src/cli/index.ts --outdir dist --target node --banner '#!/usr/bin/env node'",
+    "link": "bun link",
+    "prepublishOnly": "bun run build"
+  },
+  "engines": {
+    "node": ">=18"
   },
   "devDependencies": {
     "@types/bun": "latest",
