@@ -12,6 +12,8 @@ import { registerChannels } from "./commands/channels";
 import { registerLog } from "./commands/log";
 import { registerSync } from "./commands/sync";
 import { registerExport } from "./commands/export";
+import { registerInstall } from "./commands/install";
+import { registerProjects } from "./commands/projects";
 import { initTelemetry, shutdownTelemetry } from "../telemetry/index";
 import { loadConfig, resolveRoot } from "../core/config";
 
@@ -36,6 +38,8 @@ registerChannels(program);
 registerLog(program);
 registerSync(program);
 registerExport(program);
+registerInstall(program);
+registerProjects(program);
 
 program.hook("preAction", () => {
   const opts = program.opts();
