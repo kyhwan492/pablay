@@ -2,6 +2,8 @@
 
 [![npm version](https://img.shields.io/npm/v/pablay)](https://www.npmjs.com/package/pablay)
 [![license](https://img.shields.io/npm/l/pablay)](LICENSE)
+[![GitHub Sponsors](https://img.shields.io/github/sponsors/kyhwan492?label=Sponsor&logo=githubsponsors)](https://github.com/sponsors/kyhwan492)
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-support-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/kyhwan492)
 
 Async message board for AI agent teams. Local, file-based, zero infrastructure.
 

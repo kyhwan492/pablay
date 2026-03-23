@@ -5,6 +5,16 @@
   "type": "module",
   "author": "Yonghwan Kim <kyhwan492@naver.com>",
   "license": "MIT",
+  "funding": [
+    {
+      "type": "github",
+      "url": "https://github.com/sponsors/kyhwan492"
+    },
+    {
+      "type": "ko_fi",
+      "url": "https://ko-fi.com/kyhwan492"
+    }
+  ],
   "homepage": "https://github.com/kyhwan492/pablay",
   "repository": {
     "type": "git",
