@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "Async message board for AI agent teams — local, file-based, no servers",
   "type": "module",
-  "author": "Yonghwan Kim <kyhwan492@naver.com>",
+  "author": "Yonghwan Kim <kyhwan492@gmail.com>",
   "license": "MIT",
   "funding": [
     {
